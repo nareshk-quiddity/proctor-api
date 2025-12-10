@@ -18,7 +18,12 @@ router.get('/', verifyToken, async (req, res) => {
         if (req.user.role === 'super_admin') {
             analytics = await getSuperAdminAnalytics();
         } else if (req.user.role === 'customer_admin') {
-            analytics = await getOrgAdminAnalytics(req.user.organizationId);
+            if (req.query.userId) {
+                // Allow admin to view a specific recruiter's analytics
+                analytics = await getRecruiterAnalytics(req.query.userId, req.user.organizationId);
+            } else {
+                analytics = await getOrgAdminAnalytics(req.user.organizationId);
+            }
         } else if (req.user.role === 'recruiter') {
             analytics = await getRecruiterAnalytics(req.user._id, req.user.organizationId);
         } else {

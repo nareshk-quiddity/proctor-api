@@ -3,6 +3,7 @@ const User = require('../models/User');
 const bcrypt = require('bcryptjs');
 const { verifyToken, checkRole } = require('../middleware/authMiddleware');
 
+const jwt = require('jsonwebtoken');
 // Create new user (Admin only)
 router.post('/users', verifyToken, checkRole(['super_admin', 'customer_admin']), async (req, res) => {
     try {
@@ -201,6 +202,46 @@ router.get('/analytics', verifyToken, checkRole(['customer_admin']), async (req,
                     active: activeCandidates,
                     inactive: candidates - activeCandidates
                 }
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// Impersonate User (Admin only)
+router.post('/impersonate/:userId', verifyToken, checkRole(['super_admin', 'customer_admin']), async (req, res) => {
+    try {
+        const userToImpersonate = await User.findById(req.params.userId);
+        if (!userToImpersonate) return res.status(404).json({ message: 'User not found' });
+
+        // Customer Admin restrictions
+        if (req.user.role === 'customer_admin') {
+            // Check if user belongs to same organization
+            if (!userToImpersonate.organizationId || userToImpersonate.organizationId.toString() !== req.user.organizationId.toString()) {
+                return res.status(403).json({ message: 'You can only impersonate users in your organization' });
+            }
+            // Cannot impersonate admins
+            if (['super_admin', 'customer_admin'].includes(userToImpersonate.role)) {
+                return res.status(403).json({ message: 'Cannot impersonate administrative accounts' });
+            }
+        }
+
+        // Create token for the impersonated user
+        const token = jwt.sign({
+            _id: userToImpersonate._id,
+            role: userToImpersonate.role,
+            organizationId: userToImpersonate.organizationId
+        }, process.env.JWT_SECRET, { expiresIn: '1h' });
+
+        res.json({
+            token,
+            user: {
+                _id: userToImpersonate._id,
+                username: userToImpersonate.username,
+                email: userToImpersonate.email,
+                role: userToImpersonate.role,
+                organizationId: userToImpersonate.organizationId
             }
         });
     } catch (err) {
